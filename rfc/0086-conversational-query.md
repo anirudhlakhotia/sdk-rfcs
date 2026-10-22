@@ -223,23 +223,13 @@ SDK implementations must support concurrent operations on a `Chat` without corru
 
 The SDK retains routing information, not server lifecycle state. A retained owner identifies the Query node to which chat operations are routed; it does not guarantee that the chat is still live on that node.
 
-Routing information may become stale if another SDK instance operates on the same chat, the chat expires, or the response to RESUME is lost.
+Routing information may become stale if another `Chat` instance or an ordinary Query request changes the same chat, the chat expires, or a PAUSE or RESUME response is lost.
 
-The SDK updates the retained owner as follows:
+The retained owner is unchanged unless one of the following occurs:
 
-| Operation and outcome                                                   | SDK action                                   |
-| ----------------------------------------------------------------------- | -------------------------------------------- |
-| BEGIN succeeds                                                          | Retain the Query node BEGIN was sent to.     |
-| ASK succeeds, fails, or loses its response                              | Keep the retained owner.                     |
-| PAUSE succeeds                                                          | Clear the retained owner.                    |
-| PAUSE fails or loses its response                                       | Keep the retained owner.                     |
-| RESUME succeeds                                                         | Retain the Query node RESUME was sent to.    |
-| RESUME may have been dispatched, but its outcome is unknown             | Retain the Query node RESUME was sent to.    |
-| RESUME returns 19255                                                    | Retain the Query node RESUME was sent to.    |
-| RESUME to the retained owner returns 19243 as its first top-level error | Clear the retained owner.                    |
-| RESUME fails before dispatch or returns any other error                 | Keep the previous routing information.       |
-| END succeeds                                                            | Close the local `Chat` wrapper.              |
-| END fails or loses its response                                         | Keep the retained owner.                     |
+- When BEGIN succeeds, it becomes the node BEGIN was sent to.
+- When RESUME succeeds, returns 19255, or may have been dispatched but its outcome is unknown, it becomes the node RESUME was sent to.
+- When PAUSE succeeds, or RESUME to the retained owner returns 19243, it is cleared.
 
 The SDK must not probe for chat state or perform lifecycle operations on the application's behalf. A server or transport error does not by itself prevent the application's next explicit operation.
 
@@ -313,8 +303,6 @@ The SDK does not trigger an additional configuration refresh beyond normal topol
 For ASK, PAUSE, and END, no retained owner or an unresolvable owner causes `ChatCurrentlyUnavailableException`.
 
 The SDK fails locally with this error, keeps the routing information, and does not automatically retry or reroute the request.
-
-A connection failure to a resolvable owner must not cause RESUME to select another node.
 
 Transport failures follow the normal SDK error mappings (RFC 0058). Timeouts before dispatch map to `UnambiguousTimeoutException` (#14); timeouts after possible dispatch map to `AmbiguousTimeoutException` (#13). Cancellation maps to `RequestCanceledException` (#2) where applicable.
 
