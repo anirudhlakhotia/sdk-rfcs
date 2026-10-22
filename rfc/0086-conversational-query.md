@@ -67,6 +67,7 @@ ConversationalQueryMetaData
     status() -> QueryStatus
     warnings() -> list<QueryWarning>
     metrics() -> optional<QueryMetrics>
+    profile() -> optional<JsonObject>
     requestTokens() -> optional<TokenUsage>
     chatTokens() -> optional<TokenUsage>
     naturalLanguageProcessingTime() -> optional<Duration>
@@ -127,6 +128,7 @@ Fields shared by ConversationalQueryOptions and AskOptions {
     useReplica bool
     clientContextId string
     metrics bool
+    profile QueryProfile
     timeout Duration
     rawParameters map<string, JsonValue>
 }
@@ -379,6 +381,8 @@ Credential parameters are defined under [Model Credentials](#model-credentials).
 ## Results
 
 `ConversationalQueryResult` is a separate public result type with normal Query row semantics and the metadata defined below.
+
+`ConversationalQueryMetaData.profile()` exposes the Query response's `profile` object when present, using the same representation and optionality as ordinary Query metadata. Profiling is controlled by the existing `QueryProfile` option and uses its normal Query request mapping.
 
 ### Generated statement
 
