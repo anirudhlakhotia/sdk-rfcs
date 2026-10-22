@@ -26,7 +26,7 @@ Model configuration and credentials are supplied per request or as defaults for 
 ## API
 
 ```
-Keyspaces = list<string>  // SQL++ keyspace paths
+Keyspaces = list<Collection>
 
 Cluster.conversationalQuery() -> ConversationalQuery
 
@@ -100,7 +100,6 @@ ConversationalQueryOptions {
     execute optional<bool>
     output ConversationalQueryOutput
     useKnowledge bool
-    queryContext string
 }
 
 BeginChatOptions {
@@ -108,7 +107,6 @@ BeginChatOptions {
     credential ModelCredential
     inactivityTimeout Duration
     useKnowledge bool
-    queryContext string
     timeout Duration
 }
 
@@ -189,8 +187,6 @@ BEGIN, PAUSE, RESUME, and END use their operation's `timeout` when set. Otherwis
 
 The SDK does not expose prepared statements, named or positional parameters, `readonly`, or `preserveExpiry` for Conversational Query, and must send these requests as adhoc.
 
-`queryContext` uses the ordinary Query `query_context` request parameter and is sent unchanged. The SDK does not parse, quote, or qualify it. It is sent only by one-shot `query` and `beginChat`. For a chat, Query uses it to resolve the keyspaces supplied to BEGIN. It is not retained as chat configuration or in the `ChatHandle`.
-
 ## Model Credentials
 
 `ModelCredential` authenticates Query's calls to the model provider and is separate from Couchbase authentication. It is not accepted in `ClusterOptions`.
@@ -227,7 +223,7 @@ After resolving defaults and overrides, the SDK must reject any supplied model o
 
 ## One-shot Query
 
-`query` submits a single natural-language prompt with at least one caller-supplied keyspace. It returns the generated statement when present, together with any execution results. The SDK must reject an empty keyspace list with `InvalidArgumentException` (RFC 0058, #3).
+`query` submits a single natural-language prompt with at least one caller-supplied `Collection`. It returns the generated statement when present, together with any execution results. The SDK must reject an empty keyspace list with `InvalidArgumentException` (RFC 0058, #3).
 
 ## Chat Lifecycle
 
@@ -349,7 +345,7 @@ Statement options are encoded as a JSON object in the `WITH` clause. For `USING 
 For example:
 
 ```text
-USING AI WITH {"keyspaces":["travel-sample.inventory.hotel"],"knowledge":true,"execute":false,"output":"SQL"} Find hotels in Paris
+USING AI WITH {"keyspaces":["`travel-sample`.`inventory`.`hotel`"],"knowledge":true,"execute":false,"output":"SQL"} Find hotels in Paris
 ```
 
 ### Operations
@@ -373,7 +369,7 @@ The SDK must use the `WITH` fields below for `hint`, `execute`, and `output`. It
 
 | Field       | Encoding                                                                                                                                           |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `keyspaces` | Array of SQL++ keyspace-path strings, passed verbatim, for example `["travel-sample.inventory.hotel"]`.                                           |
+| `keyspaces` | An array of fully qualified SQL++ keyspace paths, one per `Collection`, for example ``["`travel-sample`.`inventory`.`hotel`"]``. |
 | `knowledge` | `useKnowledge` as a JSON boolean, defaulting to `false`. Send on `query` and `beginChat`; omit on `ask`. |
 | `hint`      | JSON string when supplied; otherwise omit.                                                                                                         |
 | `execute`   | JSON boolean. Omit when unset; the server default is `true`.                                                                                        |
