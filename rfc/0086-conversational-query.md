@@ -21,7 +21,7 @@ A live chat resides on a single Query node, and Query does not forward chat requ
 
 One-shot queries are independent requests. Chats use explicit BEGIN, ASK, PAUSE, RESUME, and END operations. Query manages chat state and persists it while paused; the SDK retains the chat id and routing information needed to reach the owning node.
 
-Model configuration and credentials are supplied per request or as defaults for a `Chat`, rather than stored in `ChatHandle`. Query generates SQL++ and executes eligible statements by default, subject to the `execute` option. Generated statements run under the caller's Couchbase identity, while model-provider access uses separate credentials.
+A one-shot `query` uses the supplied model and credential for that request. A `Chat` uses the model and credential supplied to `beginChat` or `attachChat`; neither is stored in `ChatHandle`. Query generates SQL++ and executes eligible statements by default, subject to the `execute` option. Generated statements run under the caller's Couchbase identity, while model-provider access uses separate credentials.
 
 ## API
 
@@ -87,7 +87,6 @@ ModelOptions {
     provider string
     name string
     endpoint string
-    region string
     outputTokenLimit int
     moderation optional<bool>
     raw map<string, JsonValue>
@@ -116,8 +115,6 @@ AttachChatOptions {
 }
 
 AskOptions {
-    model ModelOptions
-    credential ModelCredential
     hint string
     execute optional<bool>
     output ConversationalQueryOutput
@@ -135,8 +132,6 @@ Fields shared by ConversationalQueryOptions and AskOptions {
 }
 
 PauseOptions {
-    model ModelOptions
-    credential ModelCredential
     summarize optional<bool>
     timeout Duration
 }
@@ -160,20 +155,11 @@ All option fields are optional. Fields declared `optional<T>` must distinguish u
 
 Existing SDK controls for timeouts, retries, tracing, and cancellation also apply, subject to the rules in this RFC. `rawParameters` supplies Query request parameters, while `ModelOptions.raw` supplies additional model configuration.
 
-### Defaults and overrides
+### Model and credential
 
-| Source | Effect |
-| --- | --- |
-| `query` options | Model and credential for that request. |
-| `beginChat` or `attachChat` options | Defaults for the returned `Chat`. |
-| `ask` or `pause` options | Override for that operation. |
-| `resume` or `end` | No model inputs. |
+A one-shot `query` sends the model and credential supplied in `ConversationalQueryOptions`. `beginChat` and `attachChat` keep them in the returned `Chat`, without sending them to Query. Each `ask` sends the `Chat`'s model and credential, if supplied. `pause` does the same unless `summarize` is `false`.
 
-When an operation sends model inputs, a supplied `ModelOptions` replaces the default model configuration, including `raw`; the SDK does not merge individual fields. If `ModelOptions` is omitted, the default is used. If an empty `ModelOptions` is explicitly supplied, it replaces the default.
-
-Model and credential overrides are independent: overriding the model does not change the credential, and vice versa. Overrides on `ask` and `pause` apply only to that operation and do not change the `Chat`'s defaults. When model inputs are sent, an operation without a credential override uses the `Chat`'s default credential. There is no per-operation option to clear that default.
-
-A `Chat` captures its defaults when `beginChat` or `attachChat` is called; later changes to the supplied option objects do not affect it.
+The SDK captures the model and credential, including the contents of `ModelOptions.raw`, when `beginChat` or `attachChat` is called. Later changes to the supplied options do not affect the returned `Chat`, and its model and credential cannot be changed on that instance. To use a different model or credential with the same server-side chat, the application creates a new `Chat` using `attachChat(chat.handle(), options)`. The new instance uses only the model and credential supplied in `AttachChatOptions` and does not inherit either from the original `Chat`. The two instances maintain routing state independently.
 
 ### Ordinary Query controls
 
@@ -191,7 +177,7 @@ The SDK does not expose prepared statements, named or positional parameters, `re
 
 `ModelCredential` authenticates Query's calls to the model provider and is separate from Couchbase authentication. It is not accepted in `ClusterOptions`.
 
-The **direct-provider path** sends model requests directly from Query to the configured provider instead of through the Capella iQ intermediary. The Capella path is selected when the effective credential is `capella`. `credentialStore`, `apiKey`, or no credential use the direct-provider mapping.
+The **direct-provider path** sends model requests directly from Query to the configured provider instead of through the Capella iQ intermediary. The Capella path is selected when the credential is `capella`. `credentialStore`, `apiKey`, or no credential use the direct-provider mapping.
 
 | Credential | Request parameters |
 | --- | --- |
@@ -219,7 +205,7 @@ If a supplied typed option and a `raw` entry map to the same `natural_config` ke
 
 The SDK must reject `cred_id` and `api_key` in `raw`, compared case-insensitively. Credentials must use `ModelCredential`. The SDK copies the remaining `raw` entries to `natural_config` without filtering them.
 
-After resolving defaults and overrides, the SDK must reject any supplied model option that is unsupported by the selected credential path. This check and the `cred_id`/`api_key` check above apply only when an operation sends model inputs, and only to the resolved options. `beginChat` and `attachChat` capture defaults without validating them. See [Model option mapping](#model-option-mapping).
+The SDK must reject model options unsupported by the selected credential path. This check and the `cred_id`/`api_key` check above must be performed before sending a one-shot `query` request or BEGIN, and before `attachChat` returns a `Chat`. `ask` and `pause` use the configuration checked when the `Chat` was created. See [Model option mapping](#model-option-mapping).
 
 ## One-shot Query
 
@@ -269,7 +255,7 @@ The keyspace rule for `query` also applies to `beginChat`.
 
 `pause` sends PAUSE to the retained owner.
 
-`summarize` controls whether Query may summarize the conversation before saving it. When it is unset or `true`, PAUSE may invoke the model. When `summarize` is `false`, the SDK omits model inputs and does not validate unused model or credential overrides.
+`summarize` controls whether Query may summarize the conversation before saving it. When it is unset or `true`, PAUSE may invoke the model. When `summarize` is `false`, the SDK omits model inputs.
 
 ### Resume
 
@@ -289,7 +275,7 @@ After END succeeds, the local `Chat` wrapper is closed. Further server operation
 
 `handle()` returns an immutable snapshot of the `Chat`'s current handle state.
 
-`attachChat(handle)` is local and must not issue RESUME. The returned `Chat` takes its model and credential defaults only from `AttachChatOptions`.
+`attachChat(handle)` is local and must not issue RESUME.
 
 The handle's JSON form is an object with only these fields:
 
@@ -353,9 +339,9 @@ USING AI WITH {"keyspaces":["`travel-sample`.`inventory`.`hotel`"],"knowledge":t
 | Operation   | Statement                          | `WITH` fields                                                  | Model inputs                                                                    |
 | ----------- | ---------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `query`     | `USING AI WITH <options> <prompt>` | `keyspaces`, `knowledge`; optional `hint`, `execute`, `output` | Send the supplied model and credential, if any.                                 |
-| `beginChat` | `BEGIN CHAT WITH <options>`        | `keyspaces`, `knowledge`; optional `timeout`                   | Do not send; supplied values become `Chat` defaults.                            |
-| `ask`       | `USING AI WITH <options> <prompt>` | Optional `hint`, `execute`, `output`                           | Send the effective model and credential, if any.                                |
-| `pause`     | `PAUSE CHAT [WITH <options>]`      | Optional `summarize`                                           | Send the effective model and credential, if any, unless `summarize` is `false`. |
+| `beginChat` | `BEGIN CHAT WITH <options>`        | `keyspaces`, `knowledge`; optional `timeout`                   | Do not send the model or credential; the returned `Chat` retains them.          |
+| `ask`       | `USING AI WITH <options> <prompt>` | Optional `hint`, `execute`, `output`                           | Send the `Chat`'s model and credential, if any.                                 |
+| `pause`     | `PAUSE CHAT [WITH <options>]`      | Optional `summarize`                                           | Send the `Chat`'s model and credential, if any, unless `summarize` is `false`.  |
 | `resume`    | `RESUME CHAT`                      | None                                                           | None.                                                                           |
 | `end`       | `END CHAT`                         | None                                                           | None.                                                                           |
 
@@ -386,7 +372,6 @@ Credential parameters are defined under [Model Credentials](#model-credentials).
 | `provider`         | `natural_vendor` | `natural_config.provider`                     |
 | `name`             | `natural_model`  | `natural_config.model`                        |
 | `endpoint`         | Unsupported      | `natural_config.endpoint`                     |
-| `region`           | Unsupported      | `natural_config.region`                       |
 | `outputTokenLimit` | Unsupported      | `natural_config.output_token_limit`           |
 | `moderation`       | Unsupported      | `natural_config.moderation`                   |
 | `raw`              | Unsupported      | Additional top-level `natural_config` entries |
@@ -490,7 +475,7 @@ The SDK must not add a separate version check for the direct-provider path.
 
 # Documentation
 
-SDK documentation should explain how to save and restore a `ChatHandle`. A handle excludes model and credential configuration. It is a snapshot, so applications should save a new handle after `beginChat`, `pause`, or `resume`. Model and credential options supplied to `beginChat` or `attachChat` become defaults for the returned `Chat`; those supplied to `beginChat` are not sent with BEGIN.
+SDK documentation should explain how to save and restore a `ChatHandle`. The handle is a snapshot, so applications should save an updated handle after `beginChat`, `pause`, or `resume`. It does not contain model or credential configuration, so applications need to supply any configuration required by subsequent `ask` or `pause` operations when attaching. A `pause` that may summarize can fail if the required model inputs are missing; setting `summarize` to `false` avoids that requirement. `beginChat` and `attachChat` do not verify model availability or model-provider credentials; related errors may surface on a later `ask` or `pause`.
 
 Documentation must explain that applications must serialize PAUSE, RESUME, and END operations on the same chat, including across `Chat` instances, and any other operations whose order matters. It should explain that an explicit `resume()` may recover from `ChatCurrentlyUnavailableException`, but ambiguous lifecycle outcomes must not be blindly replayed. END does not delete a paused chat, so the application must resume it first. After END succeeds, previously serialized handles can still be attached, but they cannot continue the chat.
 
