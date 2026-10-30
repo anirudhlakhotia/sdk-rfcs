@@ -167,8 +167,6 @@ The SDK captures the model and credential, including the contents of `ModelOptio
 
 The listed Query controls retain their existing types, semantics, and wire mappings.
 
-A timeout reported by the SDK does not guarantee that Query has stopped processing the request.
-
 BEGIN, PAUSE, RESUME, and END use their operation's `timeout` when set. Otherwise, the SDK's normal Query operation timeout applies.
 
 `rawParameters` follows RFC 0056. The SDK must reject raw parameters whose names begin with `natural` (case-insensitively), to avoid conflicts with Conversational Query request parameters.
@@ -304,10 +302,6 @@ For ASK, PAUSE, and END, no retained owner or an unresolvable owner causes `Chat
 
 The SDK fails locally with this error, keeps the routing information, and does not automatically retry or reroute the request.
 
-Transport failures follow the normal SDK error mappings (RFC 0058). Timeouts before dispatch map to `UnambiguousTimeoutException` (#14); timeouts after possible dispatch map to `AmbiguousTimeoutException` (#13). Cancellation maps to `RequestCanceledException` (#2) where applicable.
-
-`RequestCanceledException` does not by itself establish that the request was not dispatched. If the SDK knows cancellation occurred before dispatch, the pre-dispatch rules apply. Otherwise, the outcome is unknown and the SDK must not automatically retry or infer chat state.
-
 A complete, successfully parsed Query response is treated as a returned server response for routing, even if its error maps to `AmbiguousTimeoutException`. If no complete response is available after the request may have been dispatched, the outcome is unknown.
 
 For BEGIN, or RESUME without a resolvable retained owner, the SDK selects a Query node with a `nodeUUID` and a usable Query endpoint for the selected network and TLS setting in its current cluster configuration, and sends the request there. The SDK must record the owner before completing a successful BEGIN or RESUME.
@@ -416,7 +410,6 @@ The mappings below apply only to Conversational Query operations. When a respons
 
 | Code  | SDK handling                                                                                                                                     |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1080  | For all Conversational Query operations, map 1080 to `AmbiguousTimeoutException` (RFC 0058, #13), unlike ordinary Query handling. The operation may have taken effect before the timeout. |
 | 19220 | Too many natural-language requests are waiting on the receiving node. `RateLimitedException` (RFC 0058, #21). |
 | 19221 | A natural-language request waited too long for admission on the receiving node. `RateLimitedException` (RFC 0058, #21). |
 | 19222 | Natural-language processing is disabled on the receiving node. `FeatureNotAvailableException` (RFC 0058, #15). |
@@ -430,17 +423,9 @@ The mappings below apply only to Conversational Query operations. When a respons
 
 The `ChatCurrentlyUnavailableException` error context includes the chat id, the retained owner's `nodeUUID` when one is retained, and the operation.
 
-## Retries
+## Retries and Timeouts
 
-The SDK must not automatically retry a `USING AI` request or chat lifecycle request once it may have reached Query. This rule and the affinity rules in this RFC take precedence over any user-configured retry strategy.
-
-This applies even with `execute(false)`.
-
-The SDK may use normal RFC 0049 retry handling only when the request is known not to have reached Query. A retry of an operation sent to a retained owner must target that same Query node.
-
-A pre-dispatch retry of BEGIN, or of RESUME when there is no resolvable retained owner, may choose a different node.
-
-The SDK must preserve the server's `retry` flag in error context when present. That flag does not authorize replay of the enclosing Conversational Query request.
+Normal SDK retry and timeout handling (RFC 0049, RFC 0058) applies. One-shot `query` is idempotent, and BEGIN, ASK, PAUSE, RESUME, and END are not. A request timeout reported by Query is handled like an SDK timeout after dispatch.
 
 ## Tracing
 
@@ -469,7 +454,7 @@ The SDK must not add a separate version check for the direct-provider path.
 
 SDK documentation should explain how to save and restore a `ChatHandle`. The handle is a snapshot, so applications should save an updated handle after `beginChat`, `pause`, or `resume`. It does not contain model or credential configuration, so applications need to supply any configuration required by subsequent `ask` or `pause` operations when attaching. A `pause` that may summarize can fail if the required model inputs are missing; setting `summarize` to `false` avoids that requirement. `beginChat` and `attachChat` do not verify model availability or model-provider credentials; related errors may surface on a later `ask` or `pause`.
 
-Documentation must explain that applications must serialize PAUSE, RESUME, and END operations on the same chat, including across `Chat` instances, and any other operations whose order matters. It should explain that an explicit `resume()` may recover from `ChatCurrentlyUnavailableException`, but ambiguous lifecycle outcomes must not be blindly replayed. END does not delete a paused chat, so the application must resume it first. After END succeeds, previously serialized handles can still be attached, but they cannot continue the chat.
+Documentation must explain that applications must serialize PAUSE, RESUME, and END operations on the same chat, including across `Chat` instances, and any other operations whose order matters. It should explain that an explicit `resume()` may recover from `ChatCurrentlyUnavailableException`, but an ASK or lifecycle operation with an ambiguous outcome must not be blindly replayed. END does not delete a paused chat, so the application must resume it first. After END succeeds, previously serialized handles can still be attached, but they cannot continue the chat.
 
 Documentation should explain that `execute(true)` does not guarantee execution. Applications that need to determine whether a statement was executed should enable metrics and inspect `generatedStatementExecuted()` when present. Creating a function generated with `JsUdf` requires a separate ordinary Query request.
 
