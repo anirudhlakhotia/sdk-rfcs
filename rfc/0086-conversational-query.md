@@ -209,7 +209,7 @@ The SDK must reject model options unsupported by the selected credential path. T
 
 ## One-shot Query
 
-`query` submits a single natural-language prompt with at least one caller-supplied `Collection`. It returns the generated statement when present, together with any execution results. The SDK must reject an empty keyspace list with `InvalidArgumentException` (RFC 0058, #3).
+`query` submits a single natural-language prompt with at least one caller-supplied `Collection`. It returns the generated statement when present, together with any execution results. The SDK must reject an empty keyspace list with `InvalidArgumentException`.
 
 ## Chat Lifecycle
 
@@ -257,7 +257,7 @@ If the retained owner is resolvable, the SDK sends RESUME to that node. Otherwis
 
 `end` sends END to the retained owner.
 
-After END succeeds, the local `Chat` wrapper is closed. Further server operations and `handle()` on that object fail locally with `InvalidArgumentException` (RFC 0058, #3).
+After END succeeds, the local `Chat` wrapper is closed. Further server operations and `handle()` on that object fail locally with `InvalidArgumentException`.
 
 ## Chat Handle
 
@@ -402,7 +402,7 @@ When present, `metrics.generatedStatementExecuted` is exposed through `Conversat
 
 Except for the rules below, normal Query error handling (RFC 0058) applies.
 
-Unless this RFC specifies another error, invalid arguments raise `InvalidArgumentException` (RFC 0058, #3).
+Unless this RFC specifies another error, invalid arguments raise `InvalidArgumentException`.
 
 The SDK must preserve the server code, message, and `reason` in the Query error context, subject to credential redaction. `reason` may be a nested Query error with its own `code` or a plain string.
 
@@ -410,12 +410,12 @@ The mappings below apply only to Conversational Query operations. When a respons
 
 | Code  | SDK handling                                                                                                                                     |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 19220 | Too many natural-language requests are waiting on the receiving node. `RateLimitedException` (RFC 0058, #21). |
-| 19221 | A natural-language request waited too long for admission on the receiving node. `RateLimitedException` (RFC 0058, #21). |
-| 19222 | Natural-language processing is disabled on the receiving node. `FeatureNotAvailableException` (RFC 0058, #15). |
+| 19220 | Too many natural-language requests are waiting on the receiving node. `RateLimitedException`. |
+| 19221 | A natural-language request waited too long for admission on the receiving node. `RateLimitedException`. |
+| 19222 | Natural-language processing is disabled on the receiving node. `FeatureNotAvailableException`. |
 | 19236 | On ASK, PAUSE, or END, the receiving node has no live chat with that id. `ChatCurrentlyUnavailableException`. |
-| 19240 | The node has no available live-chat slots. `TemporaryFailureException` (RFC 0058, #7), including when nested in a 19243 `reason`; preserve both codes. |
-| 19241 | The Couchbase identity failed the chat ownership check. `AuthenticationFailureException` (RFC 0058, #6). |
+| 19240 | The node has no available live-chat slots. `TemporaryFailureException`, including when nested in a 19243 `reason`; preserve both codes. |
+| 19241 | The Couchbase identity failed the chat ownership check. `AuthenticationFailureException`. |
 | 19243 | RESUME could not restore the chat on the receiving node. Except for nested 19240, no new typed exception is defined for this code: use the SDK's existing handling for an unmapped Query error and preserve the server code and error context. It does not prove that the persisted chat is missing. Routing follows [Routing](#routing). |
 | 19255 | RESUME found the chat already live on the receiving node. No new typed exception is defined for this code: use the SDK's existing handling for an unmapped Query error, and preserve the server code and error context. Routing follows [Routing](#routing). |
 
